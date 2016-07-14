@@ -449,7 +449,36 @@ public class WorkOrderExecutor extends AbstractOrderExecutor {
 		wo.setComments("failed in compute::add");
 
 	}
+private String getOstype(CmsWorkOrderSimple wo)
+{
+	String cloudName = wo.getCloud().getCiName();
+	String osType = "";
+	if (wo.getPayLoad().containsKey("DependsOn")
+			&& wo.getPayLoad().get("DependsOn").get(0).getCiClassName()
+					.contains("Os"))
+		osType = wo.getPayLoad().get("DependsOn").get(0).getCiAttributes()
+				.get("ostype");
+	else if (wo.getPayLoad().containsKey("DependsOn"))
+		
+	    if (((wo.getPayLoad().get("DependsOn")).size() > 1 ) && (wo.getPayLoad().get("DependsOn").get(1).getCiAttributes().get("ostype") != null))
+		    osType = wo.getPayLoad().get("DependsOn").get(1).getCiAttributes().get("ostype");
 
+	else
+		osType = wo.getRfcCi().getCiAttributes().get("ostype");
+
+	if (osType.equals("default-cloud")) {
+
+		if (!wo.getServices().containsKey("compute")) {
+			wo.setComments("missing compute service");
+			return "error";
+		}
+
+		osType = wo.getServices().get("compute").get(cloudName)
+				.getCiAttributes().get("ostype");
+		logger.info("using default-cloud ostype: " + osType);
+	}
+	return osType;
+}
 
 	/**
 	 * Calls local or remote chef to do recipe [ciClassname::wo.getRfcCi().rfcAction]
@@ -457,19 +486,23 @@ public class WorkOrderExecutor extends AbstractOrderExecutor {
 	 * @param wo CmsWorkOrderSimple
 	 */
 	private void runWorkOrder(CmsWorkOrderSimple wo) {
-
+		// sync cookbook and chef json request to remote site
+		String host = null;
+		String user = "oneops";
+		String keyFile = null;
+		String port = "22";
+		String os_type = null;
+		String remoteFileName=null;
+		
 		// check to see if should be remote by looking at proxy
 		Boolean isRemote = isRemoteChefCall(wo);
-
+	
 		// file-based request keyed by deployment record id - remotely by
 		// class.ciName for ease of debug
-		String remoteFileName = getRemoteFileName(wo);
+		
 		String fileName = config.getDataDir() + "/" + wo.getDpmtRecordId()
 				+ ".json";
-		logger.info("writing config to: " + fileName + " remote: "
-				+ remoteFileName);
-
-		// assume failed; gets set to COMPLETE at the end
+				// assume failed; gets set to COMPLETE at the end
 		wo.setDpmtRecordState(FAILED);
 
 		String appName = normalizeClassName(wo);
@@ -482,13 +515,6 @@ public class WorkOrderExecutor extends AbstractOrderExecutor {
 
 		String cookbookPath = getCookbookPath(wo.getRfcCi().getCiClassName());
 		logger.info("cookbookPath: " + cookbookPath);
-
-		// sync cookbook and chef json request to remote site
-		String host = null;
-		String user = "oneops";
-
-		String keyFile = null;
-		String port = "22";
 
 		if (isRemote) {
 
@@ -517,6 +543,20 @@ public class WorkOrderExecutor extends AbstractOrderExecutor {
 				removeFile(wo, keyFile);
 				return;
 			}
+			
+			os_type= getOstype(wo);
+			if (os_type.contains("windows"))
+			{
+				user = "admin";
+			}
+			else
+			{
+				user = "oneops";
+			}
+			remoteFileName = getRemoteFileName(wo,user);
+			logger.info("writing config to: " + fileName + " remote: "
+					+ remoteFileName);
+
 
 			String rfcAction = wo.getRfcCi().getRfcAction();
 
@@ -537,6 +577,7 @@ public class WorkOrderExecutor extends AbstractOrderExecutor {
 				}
 			}
 
+						
 			String baseDir = config.getCircuitDir().replace("packer",
 					cookbookPath);
 			String components = baseDir + "/components";
@@ -571,6 +612,8 @@ public class WorkOrderExecutor extends AbstractOrderExecutor {
 				}
 			}
 
+			
+		
 			// rsync exec-order shared
 			components = config.getCircuitDir().replace("packer", "shared/");
 			destination = "/home/" + user + "/shared/";
@@ -615,10 +658,21 @@ public class WorkOrderExecutor extends AbstractOrderExecutor {
 			if (isDebugEnabled(wo)) {
 				debugFlag = "-d";
 			}
-			String remoteCmd = "sudo " + vars + " shared/exec-order.rb "
+			
+			String remoteCmd =null;
+			
+			if (os_type.contains("windows"))
+			{
+				remoteCmd = "chmod 777 shared/exec-order.rb;cp .bash_profile tmpfile;sed -e \"s/^M//\" tmpfile > .bash_profile;source ~/.bash_profile;"+ vars +"shared/exec-order.rb "
+						+ wo.getRfcCi().getImpl() + " " + remoteFileName + " "
+						+ cookbookPath +" "+os_type + " "+ debugFlag ;
+			}
+			else
+			{
+			remoteCmd = "sudo " + vars + " shared/exec-order.rb "
 					+ wo.getRfcCi().getImpl() + " " + remoteFileName + " "
-					+ cookbookPath + " " + debugFlag;
-
+					+ cookbookPath + " "+os_type +" "+ debugFlag ;
+			}
 			cmd = (String[]) ArrayUtils.addAll(sshCmdLine, new String[] {
 					keyFile, "-p " + port, user + "@" + host, remoteCmd });
 			logger.info(logKey + " ### EXEC: " + user + "@" + host + " "
@@ -921,7 +975,7 @@ public class WorkOrderExecutor extends AbstractOrderExecutor {
 				logger.info("using port from " + config.getIpAttribute());
 			}
 
-			String remoteCmd = "rm " + getRemoteFileName(wo);
+			String remoteCmd = "rm " + getRemoteFileName(wo,user);
 			String[] cmd = (String[]) ArrayUtils.addAll(sshCmdLine,
 					new String[] { keyFile, "-p " + port, user + "@" + host,
 							remoteCmd });
@@ -1212,8 +1266,10 @@ public class WorkOrderExecutor extends AbstractOrderExecutor {
 
 	}
 
-	private String getRemoteFileName(CmsWorkOrderSimple wo) {
-		return "/opt/oneops/workorder/"
+	private String getRemoteFileName(CmsWorkOrderSimple wo,String user) {
+		
+		
+		return "/opt/"+user+"/workorder/"
 				+ wo.rfcCi.getCiClassName().substring(4).toLowerCase() + "."
 				+ wo.rfcCi.getCiName() + ".json";
 	}
