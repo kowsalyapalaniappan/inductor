@@ -453,7 +453,11 @@ private String getOstype(CmsWorkOrderSimple wo)
 {
 	String cloudName = wo.getCloud().getCiName();
 	String osType = "";
-	if (wo.getPayLoad().containsKey("DependsOn"))
+	if (wo.getRfcCi().getCiAttributes().containsKey("ostype"))
+	{
+		osType = wo.getRfcCi().getCiAttributes().get("ostype");
+	}
+	else if (wo.getPayLoad().containsKey("DependsOn"))
 	{
 		for(int i=0;i < wo.getPayLoad().get("DependsOn").size(); i++ )
 		{
