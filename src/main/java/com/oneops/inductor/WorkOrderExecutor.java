@@ -453,29 +453,20 @@ private String getOstype(CmsWorkOrderSimple wo)
 {
 	String cloudName = wo.getCloud().getCiName();
 	String osType = "";
-	if (wo.getPayLoad().containsKey("DependsOn")
-			&& wo.getPayLoad().get("DependsOn").get(0).getCiClassName()
-					.contains("Os"))
-		osType = wo.getPayLoad().get("DependsOn").get(0).getCiAttributes()
-				.get("ostype");
-	else if (wo.getPayLoad().containsKey("DependsOn"))
-		
-	    if (((wo.getPayLoad().get("DependsOn")).size() > 1 ) && (wo.getPayLoad().get("DependsOn").get(1).getCiAttributes().get("ostype") != null))
-		    osType = wo.getPayLoad().get("DependsOn").get(1).getCiAttributes().get("ostype");
-
-	else
-		osType = wo.getRfcCi().getCiAttributes().get("ostype");
-
-	if (osType.equals("default-cloud")) {
-
-		if (!wo.getServices().containsKey("compute")) {
-			wo.setComments("missing compute service");
-			return "error";
+	if (wo.getPayLoad().containsKey("DependsOn"))
+	{
+		for(int i=0;i < wo.getPayLoad().get("DependsOn").size(); i++ )
+		{
+	        if (wo.getPayLoad().get("DependsOn").get(i).getCiClassName().contains("Os") || 
+	        	wo.getPayLoad().get("DependsOn").get(i).getCiClassName().contains("Compute") )
+	        {
+	        	if ((wo.getPayLoad().get("DependsOn").get(i).getCiAttributes().get("ostype") != null))
+	        	{
+	        		osType = wo.getPayLoad().get("DependsOn").get(i).getCiAttributes().get("ostype");
+	        	}
+	        }
+	      
 		}
-
-		osType = wo.getServices().get("compute").get(cloudName)
-				.getCiAttributes().get("ostype");
-		logger.info("using default-cloud ostype: " + osType);
 	}
 	return osType;
 }
@@ -669,7 +660,7 @@ private String getOstype(CmsWorkOrderSimple wo)
 			}
 			else
 			{
-			remoteCmd = "sudo " + vars + " shared/exec-order.rb "
+			remoteCmd = "sudo " + vars + "shared/exec-order.rb "
 					+ wo.getRfcCi().getImpl() + " " + remoteFileName + " "
 					+ cookbookPath + " "+os_type +" "+ debugFlag ;
 			}
